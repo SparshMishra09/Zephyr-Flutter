@@ -1,159 +1,46 @@
-/// Lightweight embedding implementation using TensorFlow Lite.
+/// Lightweight embedding implementation using character n-gram vectors.
 ///
-/// Attempts to load a TF Lite model from `assets/models/embedding.tflite`.
-/// If the model is unavailable, falls back to a character n-gram (TF-IDF-like)
-/// embedding that produces 384-dimensional vectors.
+/// Produces 384-dimensional vectors using character 3-gram frequency
+/// hashing (similar to TF-HASH). No external model required — works
+/// entirely on-device with zero dependencies.
 library;
 
-import 'dart:io';
 import 'dart:math' as math;
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:logging/logging.dart';
-import 'package:tensorflow_lite_flutter/tensorflow_lite_flutter.dart';
 
 import 'embedding_generator.dart';
 
-/// Lightweight embedding provider with TF Lite and n-gram fallback.
+/// Lightweight embedding provider using character n-gram hashing.
 ///
-/// Create once and reuse across the application lifecycle. Call [close]
-/// when the app shuts down to release the interpreter.
+/// Create once and reuse across the application lifecycle.
+/// No model to load — ready to use immediately.
 class LiteEmbedder implements EmbeddingGenerator {
-  LiteEmbedder({this.modelAssetPath = 'assets/models/embedding.tflite'});
-
-  /// Path to the TF Lite model within the Flutter asset bundle.
-  final String modelAssetPath;
+  LiteEmbedder();
 
   final Logger _logger = Logger('Zephyr.RAG.LiteEmbedder');
-
-  TensorflowLite? _interpreter;
-  bool _modelLoaded = false;
-  bool _initialised = false;
 
   @override
   int get dimensions => 384;
 
-  /// Whether the TF Lite model is currently loaded and active.
-  bool get isModelLoaded => _modelLoaded;
-
-  /// Whether the embedder has been initialised (model attempted).
-  bool get isInitialised => _initialised;
-
-  // ── Lifecycle ───────────────────────────────────────────────────────
-
-  /// Initialises the embedder by attempting to load the TF Lite model.
-  ///
-  /// If loading fails, the fallback n-gram method will be used silently.
-  Future<void> initialise() async {
-    if (_initialised) return;
-    _initialised = true;
-
-    try {
-      await _loadModel();
-      _modelLoaded = true;
-      _logger.info('TF Lite embedding model loaded successfully.');
-    } catch (e, st) {
-      _logger.warning(
-        'Failed to load TF Lite model; falling back to n-gram embeddings. '
-        'Error: $e',
-        e,
-        st,
-      );
-      _modelLoaded = false;
-    }
-  }
-
-  /// Releases the TF Lite interpreter.
-  Future<void> close() async {
-    if (_interpreter != null) {
-      await _interpreter!.close();
-      _interpreter = null;
-    }
-    _modelLoaded = false;
-    _initialised = false;
-    _logger.info('LiteEmbedder closed.');
-  }
-
-  // ── TF Lite loading ─────────────────────────────────────────────────
-
-  Future<void> _loadModel() async {
-    try {
-      final model = TensorflowLiteModel.fromAsset(modelAssetPath);
-      _interpreter = await TensorflowLite.initialize(model: model);
-    } on Exception catch (_) {
-      // Re-throw so the caller knows the model is unavailable.
-      throw StateError(
-        'Unable to load TF Lite model from $modelAssetPath. '
-        'Ensure the model file exists in the asset bundle.',
-      );
-    }
-  }
+  /// Whether the embedder is ready (always true for n-gram fallback).
+  bool get isInitialised => true;
 
   // ── Embedding generation ────────────────────────────────────────────
 
   @override
   Future<List<double>> generateEmbedding(String text) async {
-    if (!_initialised) await initialise();
-
-    if (_modelLoaded && _interpreter != null) {
-      return _generateWithTfLite(text);
-    }
-
     return _generateNgramEmbedding(text);
   }
 
   @override
   Future<List<List<double>>> generateEmbeddings(List<String> texts) async {
-    if (!_initialised) await initialise();
-
-    if (_modelLoaded && _interpreter != null) {
-      // Batch inference via TF Lite.
-      final results = <List<double>>[];
-      for (final text in texts) {
-        results.add(await _generateWithTfLite(text));
-      }
-      return results;
-    }
-
-    // Fallback: generate n-gram embeddings for each text.
     return Future.wait(texts.map(_generateNgramEmbedding));
   }
-
-  /// Runs the TF Lite interpreter on [text] and returns the embedding.
-  Future<List<double>> _generateWithTfLite(String text) async {
-    final inputs = <Tensor>[Tensor.create(_preprocessText(text))];
-    final outputs = <Tensor>[Tensor.create(List<double>.filled(dimensions, 0.0))];
-
-    await _interpreter!.invoke(inputs: inputs, outputs: outputs);
-
-    final data = outputs[0].data.first as List<double>;
-    return _normalize(data);
-  }
-
-  /// Simple text preprocessing: lowercase and trim.
-  ///
-  /// A real implementation would also tokenize and pad/truncate to the
-  /// model's expected input shape.
-  List<List<dynamic>> _preprocessText(String text) {
-    // Placeholder: in a real model the input shape depends on the
-    // specific embedding model (e.g. sentence-transformers).
-    // Here we return a 1×N shape where N is the text length capped at 512.
-    const maxLen = 512;
-    final cleaned = text.toLowerCase().trim();
-    final chars = cleaned.substring(0, math.min(cleaned.length, maxLen));
-    final row = chars.runes.map((r) => r.toDouble()).toList();
-    // Pad to maxLen.
-    while (row.length < maxLen) {
-      row.add(0.0);
-    }
-    return [row];
-  }
-
-  // ── N-gram fallback ─────────────────────────────────────────────────
 
   /// Generates a 384-dimensional embedding using character 3-gram
   /// frequency vectors, L2-normalised.
   ///
-  /// This is a simple but surprisingly effective fallback that captures
+  /// This is a simple but effective approach that captures
   /// local character patterns without any external model.
   List<double> _generateNgramEmbedding(String text) {
     const dim = 384;
@@ -196,7 +83,7 @@ class LiteEmbedder implements EmbeddingGenerator {
 
   // ── Utility ─────────────────────────────────────────────────────────
 
-  /// L2-normalises a vector in-place and returns it.
+  /// L2-normalises a vector and returns it.
   static List<double> _normalize(List<double> vector) {
     var magnitude = 0.0;
     for (final v in vector) {
