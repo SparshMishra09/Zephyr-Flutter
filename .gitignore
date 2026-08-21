@@ -1,0 +1,61 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .pub directory will contain unpacked packages.
+.pub/
+
+# Coverages
+coverage/
+
+# Symbolization
+python_env/
+
+# Flutter/Dart/Android build artifacts
+build/
+android/app/build
+ios/Flutter/App.framework
+ios/Flutter/App.xcarchive
+*.orig.*
+
+# Android JNI
+android/app/src/main/jniLibs/
+
+# Generated
+local.properties
+*.jks
+*.p12
+key.properties
+.ios-state/
+
+# VSCode
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# Environment variables
+.env
+.env.local
+
+# Assets that shouldn't be committed
+assets/models/*.tflite
+assets/models/*.bin
+
+# APKs (generated during build)
+*.apk
+*.aab
